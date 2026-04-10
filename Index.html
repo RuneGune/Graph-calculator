@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multi Graph Calculator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        input {
+            padding: 6px;
+            font-size: 14px;
+            margin: 4px;
+            width: 180px;
+        }
+
+        button {
+            padding: 8px 12px;
+            margin: 5px;
+            cursor: pointer;
+        }
+
+        .func {
+            margin: 10px 0;
+        }
+
+        .graph-container {
+            width: 600px;
+            height: 600px;
+            margin: 20px auto;
+            background: white;
+            border-radius: 10px;
+        }
+
+        canvas {
+            width: 600px !important;
+            height: 600px !important;
+        }
+
+        .opacity-label {
+            font-size: 12px;
+            margin-left: 6px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Graphing Calculator (Multiple Graphs)</h2>
+    <p>Examples: x, k/x, x*x, Math.sin(x)</p>
+
+    <div id="functions"></div>
+    <button onclick="addFunction()">+ Add Function</button>
+
+    <br><br>
+
+    <label>k = <span id="kValue">1</span></label><br>
+    <input id="kSlider" type="range" min="-10" max="10" step="0.1" value="1">
+
+    <div class="graph-container">
+        <canvas id="graph" width="600" height="600"></canvas>
+    </div>
+
+    <script>
+        let chart;
+
+        const kSlider = document.getElementById("kSlider");
+        const kValueDisplay = document.getElementById("kValue");
+
+        const colors = [
+            "255,0,0",
+            "0,0,255",
+            "0,128,0",
+            "128,0,128",
+            "255,165,0",
+            "165,42,42",
+            "0,0,0"
+        ];
+
+        function addFunction(value = "") {
+            const container = document.getElementById("functions");
+
+            const wrapper = document.createElement("div");
+            wrapper.className = "func";
+
+            const input = document.createElement("input");
+            input.type = "text";
+            input.placeholder = "Enter function (e.g. x*x)";
+            input.value = value;
+
+            const opacity = document.createElement("input");
+            opacity.type = "range";
+            opacity.min = "0";
+            opacity.max = "1";
+            opacity.step = "0.05";
+            opacity.value = "1";
+
+            const label = document.createElement("span");
+            label.className = "opacity-label";
+            label.innerText = "opacity";
+
+            input.addEventListener("input", plotGraph);
+            opacity.addEventListener("input", plotGraph);
+
+            wrapper.appendChild(input);
+            wrapper.appendChild(opacity);
+            wrapper.appendChild(label);
+
+            container.appendChild(wrapper);
+
+            plotGraph();
+        }
+
+        function plotGraph() {
+            const funcs = document.querySelectorAll(".func");
+            const k = parseFloat(kSlider.value);
+            kValueDisplay.textContent = k;
+
+            const datasets = [];
+
+            funcs.forEach((f, i) => {
+                const input = f.querySelector("input[type='text']");
+                const opacity = f.querySelector("input[type='range']");
+
+                let funcStr = input.value.trim();
+                if (!funcStr) return;
+
+                if (funcStr.startsWith("y=")) funcStr = funcStr.substring(2);
+                if (funcStr.startsWith("y =")) funcStr = funcStr.substring(3);
+
+                const points = [];
+
+                for (let x = -10; x <= 10; x += 0.1) {
+                    try {
+                        let expr = funcStr.replace(/k/g, `(${k})`);
+                        let y = Function("x", `return ${expr}`)(x);
+
+                        if (isFinite(y)) {
+                            points.push({ x, y });
+                        }
+                    } catch (e) {
+                        return;
+                    }
+                }
+
+                datasets.push({
+                    label: funcStr,
+                    data: points,
+                    showLine: true,
+                    borderColor: `rgba(${colors[i % colors.length]},${opacity.value})`,
+                    tension: 0
+                });
+            });
+
+            if (chart) chart.destroy();
+
+            const ctx = document.getElementById("graph").getContext("2d");
+
+            chart = new Chart(ctx, {
+                type: "scatter",
+                data: { datasets },
+                options: {
+                    responsive: false,
+                    animation: false,
+                    scales: {
+                        x: {
+                            type: "linear",
+                            min: -10,
+                            max: 10,
+                            ticks: { stepSize: 1 }
+                        },
+                        y: {
+                            min: -10,
+                            max: 10,
+                            ticks: { stepSize: 1 }
+                        }
+                    }
+                }
+            });
+        }
+
+        kSlider.addEventListener("input", plotGraph);
+
+        addFunction("x");
+    </script>
+
+</body>
+</html>
