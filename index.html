@@ -1,191 +1,290 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <title>Multi Graph Calculator</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Graph Calculator</title>
+
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: Arial;
             text-align: center;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-
-        input {
-            padding: 6px;
-            font-size: 14px;
-            margin: 4px;
-            width: 180px;
-        }
-
-        button {
-            padding: 8px 12px;
-            margin: 5px;
-            cursor: pointer;
-        }
-
-        .func {
-            margin: 10px 0;
-        }
-
-        .graph-container {
-            width: 600px;
-            height: 600px;
-            margin: 20px auto;
-            background: white;
-            border-radius: 10px;
         }
 
         canvas {
-            width: 600px !important;
-            height: 600px !important;
+            border: 1px solid #ccc;
+            background: white;
         }
 
-        .opacity-label {
-            font-size: 12px;
-            margin-left: 6px;
+        .func {
+            background: #f4f4f4;
+            padding: 8px;
+            margin: 5px;
         }
     </style>
 </head>
+
 <body>
 
-    <h2>Graphing Calculator (Multiple Graphs)</h2>
-    <p>Examples: x, k/x, x*x, Math.sin(x)</p>
+    <h2>Graph Calculator</h2>
 
-    <div id="functions"></div>
-    <button onclick="addFunction()">+ Add Function</button>
+    <div>
+        <input id="varName" placeholder="variable (k, a...)">
+        <button onclick="addVar()">Add Variable</button>
+    </div>
+
+    <div id="vars"></div>
+
+    <br>
+
+    <div id="funcs"></div>
+    <button onclick="addFunc()">+ Add Graph</button>
 
     <br><br>
 
-    <label>k = <span id="kValue">1</span></label><br>
-    <input id="kSlider" type="range" min="-10" max="10" step="0.1" value="1">
-
-    <div class="graph-container">
-        <canvas id="graph" width="600" height="600"></canvas>
-    </div>
+    <canvas id="c" width="800" height="800"></canvas>
 
     <script>
-        let chart;
+        const canvas = document.getElementById("c");
+        const ctx = canvas.getContext("2d");
 
-        const kSlider = document.getElementById("kSlider");
-        const kValueDisplay = document.getElementById("kValue");
+        let scale = 40;
+        let offsetX = canvas.width / 2;
+        let offsetY = canvas.height / 2;
 
-        const colors = [
-            "255,0,0",
-            "0,0,255",
-            "0,128,0",
-            "128,0,128",
-            "255,165,0",
-            "165,42,42",
-            "0,0,0"
-        ];
+        let dragging = false;
+        let lastX, lastY;
 
-        function addFunction(value = "") {
-            const container = document.getElementById("functions");
+        const vars = {};
+        const funcs = [];
 
-            const wrapper = document.createElement("div");
-            wrapper.className = "func";
-
-            const input = document.createElement("input");
-            input.type = "text";
-            input.placeholder = "Enter function (e.g. x*x)";
-            input.value = value;
-
-            const opacity = document.createElement("input");
-            opacity.type = "range";
-            opacity.min = "0";
-            opacity.max = "1";
-            opacity.step = "0.05";
-            opacity.value = "1";
-
-            const label = document.createElement("span");
-            label.className = "opacity-label";
-            label.innerText = "opacity";
-
-            input.addEventListener("input", plotGraph);
-            opacity.addEventListener("input", plotGraph);
-
-            wrapper.appendChild(input);
-            wrapper.appendChild(opacity);
-            wrapper.appendChild(label);
-
-            container.appendChild(wrapper);
-
-            plotGraph();
+        function toScreen(x, y) {
+            return {
+                x: offsetX + x * scale,
+                y: offsetY - y * scale
+            };
         }
 
-        function plotGraph() {
-            const funcs = document.querySelectorAll(".func");
-            const k = parseFloat(kSlider.value);
-            kValueDisplay.textContent = k;
+        function toWorld(x, y) {
+            return {
+                x: (x - offsetX) / scale,
+                y: (offsetY - y) / scale
+            };
+        }
 
-            const datasets = [];
+        /* ================= PAN + ZOOM ================= */
 
-            funcs.forEach((f, i) => {
-                const input = f.querySelector("input[type='text']");
-                const opacity = f.querySelector("input[type='range']");
+        canvas.onmousedown = e => {
+            dragging = true;
+            lastX = e.offsetX;
+            lastY = e.offsetY;
+        };
 
-                let funcStr = input.value.trim();
-                if (!funcStr) return;
+        canvas.onmouseup = () => dragging = false;
 
-                if (funcStr.startsWith("y=")) funcStr = funcStr.substring(2);
-                if (funcStr.startsWith("y =")) funcStr = funcStr.substring(3);
+        canvas.onmousemove = e => {
+            if (!dragging) return;
+            offsetX += e.offsetX - lastX;
+            offsetY += e.offsetY - lastY;
+            lastX = e.offsetX;
+            lastY = e.offsetY;
+            draw();
+        };
 
-                const points = [];
+        canvas.onwheel = e => {
+            e.preventDefault();
 
-                for (let x = -10; x <= 10; x += 0.1) {
-                    try {
-                        let expr = funcStr.replace(/k/g, `(${k})`);
-                        let y = Function("x", `return ${expr}`)(x);
+            const zoom = e.deltaY < 0 ? 1.1 : 0.9;
 
-                        if (isFinite(y)) {
-                            points.push({ x, y });
-                        }
-                    } catch (e) {
-                        return;
+            const mouse = toWorld(e.offsetX, e.offsetY);
+
+            scale *= zoom;
+
+            offsetX = e.offsetX - mouse.x * scale;
+            offsetY = e.offsetY + mouse.y * scale;
+
+            draw();
+        };
+
+        /* ================= VARIABLES ================= */
+
+        function addVar() {
+            let name = document.getElementById("varName").value.trim().toUpperCase();
+            if (!name || vars[name] !== undefined) return;
+
+            vars[name] = 1;
+
+            const div = document.createElement("div");
+
+            div.innerHTML = `
+        ${name}
+        <input type="range" min="-10" max="10" step="0.1" value="1">
+        <span>1</span>
+      `;
+
+            const slider = div.querySelector("input");
+            const label = div.querySelector("span");
+
+            slider.oninput = () => {
+                vars[name] = parseFloat(slider.value);
+                label.innerText = slider.value;
+                draw();
+            };
+
+            document.getElementById("vars").appendChild(div);
+        }
+
+        /* ================= ADD FUNCTION (FIXED) ================= */
+
+        function addFunc() {
+            const div = document.createElement("div");
+            div.className = "func";
+
+            div.innerHTML = `
+        y =
+        <input class="expr" placeholder="k*x*x">
+
+        x min <input class="xmin" style="width:60px">
+        x max <input class="xmax" style="width:60px">
+        y min <input class="ymin" style="width:60px">
+        y max <input class="ymax" style="width:60px">
+
+        <button>Delete</button>
+      `;
+
+            const expr = div.querySelector(".expr");
+            const xMin = div.querySelector(".xmin");
+            const xMax = div.querySelector(".xmax");
+            const yMin = div.querySelector(".ymin");
+            const yMax = div.querySelector(".ymax");
+            const btn = div.querySelector("button");
+
+            const f = {
+                expr: "",
+                xMin, xMax, yMin, yMax
+            };
+
+            expr.oninput = () => { f.expr = expr.value || ""; draw(); };
+            xMin.oninput = xMax.oninput = yMin.oninput = yMax.oninput = draw;
+
+            btn.onclick = () => {
+                const i = funcs.indexOf(f);
+                if (i !== -1) funcs.splice(i, 1);
+                div.remove();
+                draw();
+            };
+
+            funcs.push(f);
+            document.getElementById("funcs").appendChild(div);
+
+            draw(); // IMPORTANT FIX: new graph immediately recognized
+        }
+
+        /* ================= EVAL ================= */
+
+        function evalExpr(expr, x) {
+            let e = expr;
+
+            for (const k in vars) {
+                e = e.replace(new RegExp(k, "gi"), "(" + vars[k] + ")");
+            }
+
+            return Function("x", "return " + e)(x);
+        }
+
+        /* ================= GRID ================= */
+
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = "#eee";
+
+            const step = scale;
+
+            for (let x = offsetX % step; x < canvas.width; x += step) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            for (let y = offsetY % step; y < canvas.height; y += step) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = "black";
+
+            ctx.beginPath();
+            ctx.moveTo(0, offsetY);
+            ctx.lineTo(canvas.width, offsetY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(offsetX, 0);
+            ctx.lineTo(offsetX, canvas.height);
+            ctx.stroke();
+
+            ctx.fillStyle = "black";
+            ctx.font = "12px Arial";
+
+            for (let x = offsetX % step; x < canvas.width; x += step) {
+                const wx = (x - offsetX) / scale;
+                if (Math.abs(wx % 1) < 0.05)
+                    ctx.fillText(wx.toFixed(0), x + 2, offsetY + 12);
+            }
+
+            for (let y = offsetY % step; y < canvas.height; y += step) {
+                const wy = (offsetY - y) / scale;
+                if (Math.abs(wy % 1) < 0.05)
+                    ctx.fillText(wy.toFixed(0), offsetX + 5, y - 2);
+            }
+        }
+
+        /* ================= DRAW ================= */
+
+        function draw() {
+            drawGrid();
+
+            for (const f of funcs) {
+                if (!f.expr) continue;
+
+                ctx.beginPath();
+                ctx.strokeStyle = "red";
+
+                let first = true;
+
+                for (let px = 0; px < canvas.width; px++) {
+                    const x = toWorld(px, 0).x;
+
+                    if (f.xMin.value && x < parseFloat(f.xMin.value)) continue;
+                    if (f.xMax.value && x > parseFloat(f.xMax.value)) continue;
+
+                    let y;
+                    try { y = evalExpr(f.expr, x); }
+                    catch { continue; }
+
+                    if (!isFinite(y)) continue;
+
+                    if (f.yMin.value && y < parseFloat(f.yMin.value)) continue;
+                    if (f.yMax.value && y > parseFloat(f.yMax.value)) continue;
+
+                    const p = toScreen(x, y);
+
+                    if (first) {
+                        ctx.moveTo(p.x, p.y);
+                        first = false;
+                    } else {
+                        ctx.lineTo(p.x, p.y);
                     }
                 }
 
-                datasets.push({
-                    label: funcStr,
-                    data: points,
-                    showLine: true,
-                    borderColor: `rgba(${colors[i % colors.length]},${opacity.value})`,
-                    tension: 0
-                });
-            });
-
-            if (chart) chart.destroy();
-
-            const ctx = document.getElementById("graph").getContext("2d");
-
-            chart = new Chart(ctx, {
-                type: "scatter",
-                data: { datasets },
-                options: {
-                    responsive: false,
-                    animation: false,
-                    scales: {
-                        x: {
-                            type: "linear",
-                            min: -10,
-                            max: 10,
-                            ticks: { stepSize: 1 }
-                        },
-                        y: {
-                            min: -10,
-                            max: 10,
-                            ticks: { stepSize: 1 }
-                        }
-                    }
-                }
-            });
+                ctx.stroke();
+            }
         }
 
-        kSlider.addEventListener("input", plotGraph);
-
-        addFunction("x");
+        draw();
     </script>
 
 </body>
